@@ -35,7 +35,43 @@
 
   <script type="text/babel">
     const { useState, useEffect } = React;
-    const { BookOpen, Plus, Trash2, Volume2, RotateCw, Check, X, Languages, Search, Download, Upload, Filter, Tag, AlertCircle, RefreshCw, Star, Copy, Image, Info, Table, ChevronDown, ChevronUp } = lucideReact;
+    const iconLibrary = (typeof window !== 'undefined' && window.lucideReact) ? window.lucideReact : {};
+    const createFallbackIcon = (emoji, label) => ({ className = '', ...rest }) => {
+      const combinedClassName = ['inline-flex items-center justify-center', className].filter(Boolean).join(' ');
+      return (
+        <span
+          {...rest}
+          role="img"
+          aria-label={label}
+          className={combinedClassName}
+        >
+          {emoji}
+        </span>
+      );
+    };
+
+    const BookOpen = iconLibrary.BookOpen || createFallbackIcon('📖', 'book');
+    const Plus = iconLibrary.Plus || createFallbackIcon('➕', 'add');
+    const Trash2 = iconLibrary.Trash2 || createFallbackIcon('🗑️', 'delete');
+    const Volume2 = iconLibrary.Volume2 || createFallbackIcon('🔊', 'volume');
+    const RotateCw = iconLibrary.RotateCw || createFallbackIcon('🔄', 'rotate');
+    const Check = iconLibrary.Check || createFallbackIcon('✔️', 'check');
+    const X = iconLibrary.X || createFallbackIcon('✖️', 'close');
+    const Languages = iconLibrary.Languages || createFallbackIcon('🌐', 'languages');
+    const Search = iconLibrary.Search || createFallbackIcon('🔍', 'search');
+    const Download = iconLibrary.Download || createFallbackIcon('⬇️', 'download');
+    const Upload = iconLibrary.Upload || createFallbackIcon('⬆️', 'upload');
+    const Filter = iconLibrary.Filter || createFallbackIcon('🧹', 'filter');
+    const Tag = iconLibrary.Tag || createFallbackIcon('🏷️', 'tag');
+    const AlertCircle = iconLibrary.AlertCircle || createFallbackIcon('⚠️', 'alert');
+    const RefreshCw = iconLibrary.RefreshCw || createFallbackIcon('🔁', 'refresh');
+    const Star = iconLibrary.Star || createFallbackIcon('⭐', 'star');
+    const Copy = iconLibrary.Copy || createFallbackIcon('📋', 'copy');
+    const Image = iconLibrary.Image || createFallbackIcon('🖼️', 'image');
+    const Info = iconLibrary.Info || createFallbackIcon('ℹ️', 'info');
+    const Table = iconLibrary.Table || createFallbackIcon('📊', 'table');
+    const ChevronDown = iconLibrary.ChevronDown || createFallbackIcon('⬇️', 'expand');
+    const ChevronUp = iconLibrary.ChevronUp || createFallbackIcon('⬆️', 'collapse');
 
 function LanguageLearningApp() {
   const [words, setWords] = useState([]);
