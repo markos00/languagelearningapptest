@@ -342,23 +342,55 @@ function LanguageLearningApp() {
       lf: 'de'
     });
 
-    const url = `https://en.pons.com/api/dicsearch?${searchParams.toString()}`;
-    const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json'
+    const baseUrl = `https://en.pons.com/api/dicsearch?${searchParams.toString()}`;
+    const proxyTransforms = [
+      url => url,
+      url => `https://cors.isomorphic-git.org/${url}`,
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    ];
+
+    let lastError = null;
+
+    for (const transform of proxyTransforms) {
+      const requestUrl = transform(baseUrl);
+
+      try {
+        const response = await fetch(requestUrl, {
+          headers: {
+            'Accept': 'application/json'
+          },
+          cache: 'no-store'
+        });
+
+        if (!response.ok) {
+          lastError = new Error(`PONS request failed with status ${response.status}`);
+          continue;
+        }
+
+        const text = await response.text();
+        if (!text) {
+          lastError = new Error('Received an empty response from PONS.');
+          continue;
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch (err) {
+          lastError = new Error('Received an unexpected response from PONS.');
+        }
+      } catch (networkError) {
+        const networkMessage = networkError && networkError.message
+          ? networkError.message
+          : 'Network error';
+        if (/failed|cors|network/i.test(networkMessage)) {
+          lastError = new Error('Unable to reach PONS due to a network or CORS restriction.');
+        } else {
+          lastError = networkError;
+        }
       }
-    });
-
-    if (!response.ok) {
-      throw new Error(`PONS request failed with status ${response.status}`);
     }
 
-    const text = await response.text();
-    try {
-      return JSON.parse(text);
-    } catch (err) {
-      throw new Error('Received an unexpected response from PONS.');
-    }
+    throw lastError || new Error('Unable to reach PONS.');
   };
 
   const addWord = async (germanWord, retryCount = 0) => {
@@ -460,9 +492,9 @@ function LanguageLearningApp() {
       }
 
       const errorMessage = error?.message || 'Unknown error';
-      const needsHint = /pons/i.test(errorMessage) || /fetch/i.test(errorMessage);
+      const needsHint = /pons|network|cors|fetch/i.test(errorMessage);
       const hint = needsHint
-        ? ' Please confirm that PONS.com is reachable from your network and try again.'
+        ? ' We tried alternate routes to PONS but they were blocked. Please check your connection or browser restrictions (like CORS or network blockers) and try again.'
         : '';
 
       setError(`Failed to add word "${germanWord}": ${errorMessage}${hint}`);
