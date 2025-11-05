@@ -35,7 +35,58 @@
 
   <script type="text/babel">
     const { useState, useEffect } = React;
-    const { BookOpen, Plus, Trash2, Volume2, RotateCw, Check, X, Languages, Search, Download, Upload, Filter, Tag, AlertCircle, RefreshCw, Star, Copy, Image, Info, Table, ChevronDown, ChevronUp } = lucideReact;
+    const iconLibrary = (typeof window !== 'undefined' && window.lucideReact) ? window.lucideReact : {};
+    const createFallbackIcon = (emoji, label) => ({ className = '', ...rest }) => {
+      const combinedClassName = ['inline-flex items-center justify-center', className].filter(Boolean).join(' ');
+      return (
+        <span
+          {...rest}
+          role="img"
+          aria-label={label}
+          className={combinedClassName}
+        >
+          {emoji}
+        </span>
+      );
+    };
+
+    const BookOpen = iconLibrary.BookOpen || createFallbackIcon('📖', 'book');
+    const Plus = iconLibrary.Plus || createFallbackIcon('➕', 'add');
+    const Trash2 = iconLibrary.Trash2 || createFallbackIcon('🗑️', 'delete');
+    const Volume2 = iconLibrary.Volume2 || createFallbackIcon('🔊', 'volume');
+    const RotateCw = iconLibrary.RotateCw || createFallbackIcon('🔄', 'rotate');
+    const Check = iconLibrary.Check || createFallbackIcon('✔️', 'check');
+    const X = iconLibrary.X || createFallbackIcon('✖️', 'close');
+    const Languages = iconLibrary.Languages || createFallbackIcon('🌐', 'languages');
+    const Search = iconLibrary.Search || createFallbackIcon('🔍', 'search');
+    const Download = iconLibrary.Download || createFallbackIcon('⬇️', 'download');
+    const Upload = iconLibrary.Upload || createFallbackIcon('⬆️', 'upload');
+    const Filter = iconLibrary.Filter || createFallbackIcon('🧹', 'filter');
+    const Tag = iconLibrary.Tag || createFallbackIcon('🏷️', 'tag');
+    const AlertCircle = iconLibrary.AlertCircle || createFallbackIcon('⚠️', 'alert');
+    const RefreshCw = iconLibrary.RefreshCw || createFallbackIcon('🔁', 'refresh');
+    const Star = iconLibrary.Star || createFallbackIcon('⭐', 'star');
+    const Copy = iconLibrary.Copy || createFallbackIcon('📋', 'copy');
+    const Image = iconLibrary.Image || createFallbackIcon('🖼️', 'image');
+    const Info = iconLibrary.Info || createFallbackIcon('ℹ️', 'info');
+    const Table = iconLibrary.Table || createFallbackIcon('📊', 'table');
+    const ChevronDown = iconLibrary.ChevronDown || createFallbackIcon('⬇️', 'expand');
+    const ChevronUp = iconLibrary.ChevronUp || createFallbackIcon('⬆️', 'collapse');
+    const ExternalLink = iconLibrary.ExternalLink || createFallbackIcon('🔗', 'external link');
+
+    const createEmptyManualEntry = (overrides = {}) => ({
+      german: '',
+      english: '',
+      translation: '',
+      partOfSpeech: '',
+      example: '',
+      exampleEnglish: '',
+      exampleTranslation: '',
+      notes: '',
+      nounGender: '',
+      nounPlural: '',
+      ...overrides
+    });
 
 function LanguageLearningApp() {
   const [words, setWords] = useState([]);
@@ -50,6 +101,7 @@ function LanguageLearningApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [sortOption, setSortOption] = useState('recent');
   const [showFilters, setShowFilters] = useState(false);
   const [shuffledIndices, setShuffledIndices] = useState([]);
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
@@ -60,8 +112,9 @@ function LanguageLearningApp() {
   const [showAnkiHelp, setShowAnkiHelp] = useState(false);
   const [selectedWordForDetails, setSelectedWordForDetails] = useState(null);
   const [expandedWords, setExpandedWords] = useState(new Set());
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [showManualEntryModal, setShowManualEntryModal] = useState(false);
+  const [manualEntryDraft, setManualEntryDraft] = useState(() => createEmptyManualEntry());
+  const [manualEntryContext, setManualEntryContext] = useState(null);
 
   const availableLanguages = [
     { code: 'none', name: 'None (English only)', flag: '🇬🇧' },
@@ -93,22 +146,6 @@ function LanguageLearningApp() {
       speechSynthesis.onvoiceschanged = loadVoices;
     }
   }, []);
-
-  // Load API key from localStorage
-  useEffect(() => {
-    const savedApiKey = localStorage.getItem('anthropicApiKey') || '';
-    setApiKey(savedApiKey);
-    if (!savedApiKey) {
-      setShowApiKeyInput(true);
-    }
-  }, []);
-
-  // Save API key to localStorage
-  useEffect(() => {
-    if (apiKey) {
-      localStorage.setItem('anthropicApiKey', apiKey);
-    }
-  }, [apiKey]);
 
   // Load words from memory on mount
   useEffect(() => {
@@ -187,201 +224,496 @@ function LanguageLearningApp() {
   const extractArticleFromWord = (word) => {
     const articlePattern = /^(der|die|das)\s+(.+)$/i;
     const match = word.trim().match(articlePattern);
-    
+
     if (match) {
       return {
         article: match[1].toLowerCase(),
         word: match[2]
       };
     }
-    
+
     return {
       article: null,
       word: word.trim()
     };
   };
 
+  const ponsLanguagePairs = {
+    none: { code: 'deen', slug: 'english' },
+    romanian: { code: 'dero', slug: 'romanian' },
+    spanish: { code: 'desp', slug: 'spanish' },
+    french: { code: 'defr', slug: 'french' },
+    italian: { code: 'deit', slug: 'italian' },
+    portuguese: { code: 'dept', slug: 'portuguese' },
+    russian: { code: 'deru', slug: 'russian' },
+    polish: { code: 'depl', slug: 'polish' },
+    dutch: { code: 'denl', slug: 'dutch' },
+    turkish: { code: 'detr', slug: 'turkish' },
+    swedish: { code: 'desv', slug: 'swedish' },
+    japanese: { code: 'deja', slug: 'japanese' },
+    chinese: { code: 'dezh', slug: 'chinese' },
+    arabic: { code: 'dear', slug: 'arabic' },
+    hindi: { code: 'dehi', slug: 'hindi' }
+  };
+
+  const cleanHtmlText = (value) => {
+    const collect = (input) => {
+      if (!input) return [];
+      if (typeof input === 'string') return [input];
+      if (Array.isArray(input)) return input.flatMap(collect);
+      if (typeof input === 'object') return Object.values(input).flatMap(collect);
+      return [];
+    };
+
+    return collect(value)
+      .join(' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const parsePonsResponse = (data, fallbackWord) => {
+    const result = {
+      german: fallbackWord,
+      translation: '',
+      partOfSpeech: '',
+      pronunciation: '',
+      example: '',
+      exampleTranslation: ''
+    };
+
+    if (!data) {
+      return { ...result, hasTranslation: false };
+    }
+
+    const translations = new Set();
+    const hits = Array.isArray(data?.hits) ? data.hits : [];
+
+    for (const hit of hits) {
+      const roms = Array.isArray(hit?.roms) ? hit.roms : [];
+      for (const rom of roms) {
+        const headword = rom?.headword || {};
+        const candidateGerman = cleanHtmlText(headword?.fulltitle || headword?.text || headword);
+        if (candidateGerman) {
+          result.german = candidateGerman;
+        }
+
+        const wordclass = cleanHtmlText(rom?.wordclass || headword?.wordclass);
+        if (wordclass && !result.partOfSpeech) {
+          result.partOfSpeech = wordclass.toLowerCase();
+        }
+
+        const pronunciation = cleanHtmlText(headword?.pronunciation || headword?.pronunciations);
+        if (pronunciation && !result.pronunciation) {
+          result.pronunciation = pronunciation;
+        }
+
+        const arabs = Array.isArray(rom?.arabs) ? rom.arabs : [];
+        for (const arab of arabs) {
+          const entries = Array.isArray(arab?.translations) ? arab.translations : [];
+          for (const entry of entries) {
+            const targetText = cleanHtmlText(entry?.target || entry);
+            if (targetText) {
+              translations.add(targetText);
+            }
+
+            if (!result.example) {
+              const exampleSource = cleanHtmlText(entry?.examples?.[0]?.source);
+              if (exampleSource) {
+                result.example = exampleSource;
+                result.exampleTranslation = cleanHtmlText(entry?.examples?.[0]?.target);
+              }
+            }
+          }
+        }
+
+        if (translations.size > 0) {
+          break;
+        }
+      }
+
+      if (translations.size > 0) {
+        break;
+      }
+    }
+
+    if (translations.size > 0) {
+      result.translation = Array.from(translations).join(', ');
+    }
+
+    return {
+      ...result,
+      hasTranslation: translations.size > 0
+    };
+  };
+
+  const normalizeNounData = (input, providedArticle) => {
+    if (!input || typeof input !== 'object') return null;
+
+    const declension = typeof input.declension === 'object' && input.declension !== null ? input.declension : {};
+    const singular = typeof declension.singular === 'object' && declension.singular !== null ? declension.singular : {};
+    const plural = typeof declension.plural === 'object' && declension.plural !== null ? declension.plural : {};
+
+    const normalized = {
+      gender: providedArticle || input.gender || null,
+      plural: input.plural || null,
+      declension: {
+        singular: {
+          nominativ: singular.nominativ || '',
+          genitiv: singular.genitiv || '',
+          dativ: singular.dativ || '',
+          akkusativ: singular.akkusativ || ''
+        },
+        plural: {
+          nominativ: plural.nominativ || '',
+          genitiv: plural.genitiv || '',
+          dativ: plural.dativ || '',
+          akkusativ: plural.akkusativ || ''
+        }
+      }
+    };
+
+    const declensionValues = [
+      normalized.declension.singular.nominativ,
+      normalized.declension.singular.genitiv,
+      normalized.declension.singular.dativ,
+      normalized.declension.singular.akkusativ,
+      normalized.declension.plural.nominativ,
+      normalized.declension.plural.genitiv,
+      normalized.declension.plural.dativ,
+      normalized.declension.plural.akkusativ
+    ];
+
+    const hasDeclensionData = declensionValues.some(value => value && String(value).trim().length > 0);
+    if (!hasDeclensionData) {
+      normalized.declension = null;
+    }
+
+    const hasMeaningfulData = Boolean(
+      (normalized.gender && String(normalized.gender).trim().length > 0) ||
+      (normalized.plural && String(normalized.plural).trim().length > 0) ||
+      hasDeclensionData
+    );
+
+    return hasMeaningfulData ? normalized : null;
+  };
+
+  const normalizeVerbData = (input) => {
+    if (!input || typeof input !== 'object') return null;
+
+    const normalized = {
+      infinitiv: input.infinitiv || '',
+      präsens: input.präsens || '',
+      präteritum: input.präteritum || '',
+      perfekt: input.perfekt || '',
+      auxiliary: input.auxiliary || '',
+      caseGovernance: input.caseGovernance || ''
+    };
+
+    const hasMeaningfulData = Object.values(normalized).some(value => value && String(value).trim().length > 0);
+    return hasMeaningfulData ? normalized : null;
+  };
+
+  const normalizeAdjectiveData = (input) => {
+    if (!input || typeof input !== 'object') return null;
+
+    const normalized = {
+      positiv: input.positiv || '',
+      komparativ: input.komparativ || '',
+      superlativ: input.superlativ || ''
+    };
+
+    const hasMeaningfulData = Object.values(normalized).some(value => value && String(value).trim().length > 0);
+    return hasMeaningfulData ? normalized : null;
+  };
+
+  const fetchPonsData = async (word, dictionaryCode) => {
+    const searchParams = new URLSearchParams({
+      q: word,
+      l: dictionaryCode,
+      in: 'de',
+      lf: 'de'
+    });
+
+    const baseUrl = `https://en.pons.com/api/dicsearch?${searchParams.toString()}`;
+    const proxyTransforms = [
+      url => url,
+      url => `https://cors.isomorphic-git.org/${url}`,
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    ];
+
+    let lastError = null;
+
+    for (const transform of proxyTransforms) {
+      const requestUrl = transform(baseUrl);
+
+      try {
+        const response = await fetch(requestUrl, {
+          headers: {
+            'Accept': 'application/json'
+          },
+          cache: 'no-store'
+        });
+
+        if (!response.ok) {
+          lastError = new Error(`PONS request failed with status ${response.status}`);
+          continue;
+        }
+
+        const text = await response.text();
+        if (!text) {
+          lastError = new Error('Received an empty response from PONS.');
+          continue;
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch (err) {
+          lastError = new Error('Received an unexpected response from PONS.');
+        }
+      } catch (networkError) {
+        const networkMessage = networkError && networkError.message
+          ? networkError.message
+          : 'Network error';
+        if (/failed|cors|network/i.test(networkMessage)) {
+          lastError = new Error('Unable to reach PONS due to a network or CORS restriction.');
+        } else {
+          lastError = networkError;
+        }
+      }
+    }
+
+    throw lastError || new Error('Unable to reach PONS.');
+  };
+
+  const handleManualEntryChange = (field, value) => {
+    setManualEntryDraft(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCloseManualEntry = () => {
+    setShowManualEntryModal(false);
+    setManualEntryDraft(createEmptyManualEntry());
+    setManualEntryContext(null);
+  };
+
+  const handleOpenManualEntry = (options = {}) => {
+    const {
+      german = '',
+      failure = null,
+      providedArticle = null,
+      language = selectedLanguage,
+      rawInput = '',
+      note = null
+    } = options;
+
+    const languageName = getLanguageName(language);
+    setManualEntryContext({
+      language,
+      failure,
+      providedArticle,
+      rawInput,
+      languageName
+    });
+
+    const baseNotes = note
+      ? note
+      : failure
+        ? `Manual entry added because automatic lookup failed: ${failure}.`
+        : 'Manually added entry.';
+
+    setManualEntryDraft(createEmptyManualEntry({
+      german: german || rawInput || '',
+      english: '',
+      translation: '',
+      partOfSpeech: providedArticle ? 'noun' : '',
+      example: '',
+      exampleEnglish: '',
+      exampleTranslation: '',
+      notes: baseNotes,
+      nounGender: providedArticle || '',
+      nounPlural: ''
+    }));
+
+    setShowManualEntryModal(true);
+  };
+
+  const handleManualEntryFromInput = () => {
+    const trimmed = (newWord || '').trim();
+    if (trimmed) {
+      const extracted = extractArticleFromWord(trimmed);
+      handleOpenManualEntry({
+        language: selectedLanguage,
+        rawInput: trimmed,
+        german: extracted.word || trimmed,
+        providedArticle: extracted.article || null
+      });
+    } else {
+      handleOpenManualEntry({ language: selectedLanguage });
+    }
+  };
+
+  const handleManualEntrySave = () => {
+    const trimmedGerman = (manualEntryDraft.german || '').trim();
+    const trimmedEnglish = (manualEntryDraft.english || '').trim();
+
+    if (!trimmedGerman) {
+      alert('Please provide the German word.');
+      return;
+    }
+
+    if (!trimmedEnglish) {
+      alert('Please provide at least an English meaning.');
+      return;
+    }
+
+    const language = manualEntryContext?.language ?? selectedLanguage;
+    const partOfSpeech = (manualEntryDraft.partOfSpeech || '').trim().toLowerCase();
+    const translationRaw = (manualEntryDraft.translation || '').trim();
+    const example = (manualEntryDraft.example || '').trim();
+    const exampleEnglishRaw = (manualEntryDraft.exampleEnglish || '').trim();
+    const exampleTranslationRaw = (manualEntryDraft.exampleTranslation || '').trim();
+    const notesRaw = (manualEntryDraft.notes || '').trim();
+    const nounGender = (manualEntryDraft.nounGender || '').trim();
+    const nounPlural = (manualEntryDraft.nounPlural || '').trim();
+
+    const translation = language === 'none' ? null : (translationRaw || null);
+    const exampleEnglish = exampleEnglishRaw || trimmedEnglish;
+    const exampleTranslation = language === 'none' ? null : (exampleTranslationRaw || translation);
+
+    const category = categorizeWord(
+      trimmedGerman,
+      translation || trimmedEnglish,
+      partOfSpeech
+    );
+
+    let nounData = null;
+    if (nounGender) {
+      nounData = {
+        gender: nounGender,
+        plural: nounPlural || null,
+        declension: null
+      };
+    } else if (manualEntryContext?.providedArticle) {
+      nounData = {
+        gender: manualEntryContext.providedArticle,
+        plural: nounPlural || null,
+        declension: null
+      };
+    }
+
+    const translationNote = notesRaw || (manualEntryContext?.failure
+      ? `Added manually after lookup failed: ${manualEntryContext.failure}`
+      : 'Manually added entry.');
+
+    const manualWord = {
+      german: trimmedGerman,
+      english: trimmedEnglish,
+      translation,
+      pronunciation: '',
+      partOfSpeech: partOfSpeech || 'vocabulary',
+      emoji: null,
+      nounData,
+      verbData: null,
+      adjectiveData: null,
+      example,
+      exampleEnglish,
+      exampleTranslation,
+      translationNote,
+      ponsDictionary: null,
+      ponsUrl: null,
+      manualEntry: true,
+      manualNotes: translationNote,
+      fallbackReason: manualEntryContext?.failure || null,
+      id: Date.now() + Math.random(),
+      language,
+      category,
+      difficulty: 2,
+      reviewCount: 0,
+      correctCount: 0,
+      lastReviewed: null,
+      nextReview: null,
+      needsReview: false,
+      createdAt: new Date().toISOString()
+    };
+
+    setWords(prev => [...prev, manualWord]);
+    setMode('list');
+    handleCloseManualEntry();
+    setError(null);
+    setNewWord('');
+  };
+
   const addWord = async (germanWord, retryCount = 0) => {
     if (!germanWord.trim()) return null;
 
-    if (!apiKey || !apiKey.trim()) {
-      setError('Please configure your Anthropic API key first. Click the "API Key" button to add it.');
-      setShowApiKeyInput(true);
-      return null;
-    }
-
     setError(null);
+    let providedArticle = null;
+    let cleanWord = germanWord.trim();
+
     try {
-      // Extract article if present
-      const { article: providedArticle, word: cleanWord } = extractArticleFromWord(germanWord);
-      
-      const languageName = availableLanguages.find(lang => lang.code === selectedLanguage)?.name || 'Romanian';
-      const isEnglishOnly = selectedLanguage === 'none';
-      
-      const articleHint = providedArticle ? `The user provided the article "${providedArticle}" for this word, so use that as the gender.` : '';
-      
-      const promptContent = isEnglishOnly 
-        ? `Provide comprehensive translation and learning information for the German word: "${cleanWord.trim()}"
-${articleHint}
+      const extracted = extractArticleFromWord(germanWord);
+      providedArticle = extracted.article;
+      cleanWord = extracted.word;
 
-Please respond ONLY with a valid JSON object in this exact format (no additional text, no markdown code blocks):
-{
-  "german": "the German word (without article)",
-  "english": "English translation",
-  "pronunciation": "IPA pronunciation",
-  "partOfSpeech": "noun/verb/adjective/adverb",
-  "emoji": "a single relevant emoji that represents this word visually",
-  
-  "nounData": {
-    "gender": "der/die/das (only if noun, otherwise null)",
-    "plural": "plural form (only if noun, otherwise null)",
-    "declension": {
-      "singular": {
-        "nominativ": "der/die/das Word",
-        "genitiv": "des/der Word(e)s",
-        "dativ": "dem/der Word(e)",
-        "akkusativ": "den/die/das Word"
-      },
-      "plural": {
-        "nominativ": "die Words",
-        "genitiv": "der Words",
-        "dativ": "den Words",
-        "akkusativ": "die Words"
-      }
-    }
-  },
-  
-  "verbData": {
-    "infinitiv": "infinitive form (only if verb, otherwise null)",
-    "präsens": "ich/du/er forms, e.g., 'ich gehe, du gehst, er geht'",
-    "präteritum": "ich/du/er forms, e.g., 'ich ging, du gingst, er ging'",
-    "perfekt": "Partizip II, e.g., 'gegangen'",
-    "auxiliary": "haben or sein",
-    "caseGovernance": "Akkusativ/Dativ/Genitiv/mit + Dativ/etc. (or null if not applicable)"
-  },
-  
-  "adjectiveData": {
-    "positiv": "base form (only if adjective/adverb, otherwise null)",
-    "komparativ": "comparative form, e.g., 'schöner'",
-    "superlativ": "superlative form, e.g., 'am schönsten'"
-  },
-  
-  "example": "a simple example sentence in German",
-  "exampleEnglish": "English translation of the example sentence"
-}
+      const selectedDictionary = ponsLanguagePairs[selectedLanguage] || ponsLanguagePairs.none;
+      const englishDictionary = ponsLanguagePairs.none;
 
-IMPORTANT: 
-- For nouns, provide COMPLETE declension table with all cases
-- For verbs, include all Stammformen (infinitiv, präsens, präteritum, perfekt)
-- For adjectives, include all Steigerungsformen (positiv, komparativ, superlativ)
-- Use null for fields that don't apply to this part of speech
-- DO NOT include any text outside the JSON
-- DO NOT use markdown code blocks
-- ONLY output the JSON object`
-        : `Provide comprehensive translation and learning information for the German word: "${cleanWord.trim()}"
-${articleHint}
+      const englishData = await fetchPonsData(cleanWord, englishDictionary.code);
+      const englishParsed = parsePonsResponse(englishData, cleanWord);
 
-Please respond ONLY with a valid JSON object in this exact format (no additional text, no markdown code blocks):
-{
-  "german": "the German word (without article)",
-  "english": "English translation",
-  "translation": "${languageName} translation",
-  "pronunciation": "IPA pronunciation",
-  "partOfSpeech": "noun/verb/adjective/adverb",
-  "emoji": "a single relevant emoji that represents this word visually",
-  
-  "nounData": {
-    "gender": "der/die/das (only if noun, otherwise null)",
-    "plural": "plural form (only if noun, otherwise null)",
-    "declension": {
-      "singular": {
-        "nominativ": "der/die/das Word",
-        "genitiv": "des/der Word(e)s",
-        "dativ": "dem/der Word(e)",
-        "akkusativ": "den/die/das Word"
-      },
-      "plural": {
-        "nominativ": "die Words",
-        "genitiv": "der Words",
-        "dativ": "den Words",
-        "akkusativ": "die Words"
-      }
-    }
-  },
-  
-  "verbData": {
-    "infinitiv": "infinitive form (only if verb, otherwise null)",
-    "präsens": "ich/du/er forms, e.g., 'ich gehe, du gehst, er geht'",
-    "präteritum": "ich/du/er forms, e.g., 'ich ging, du gingst, er ging'",
-    "perfekt": "Partizip II, e.g., 'gegangen'",
-    "auxiliary": "haben or sein",
-    "caseGovernance": "Akkusativ/Dativ/Genitiv/mit + Dativ/etc. (or null if not applicable)"
-  },
-  
-  "adjectiveData": {
-    "positiv": "base form (only if adjective/adverb, otherwise null)",
-    "komparativ": "comparative form, e.g., 'schöner'",
-    "superlativ": "superlative form, e.g., 'am schönsten'"
-  },
-  
-  "example": "a simple example sentence in German",
-  "exampleEnglish": "English translation of the example sentence",
-  "exampleTranslation": "${languageName} translation of the example sentence"
-}
-
-IMPORTANT: 
-- For nouns, provide COMPLETE declension table with all cases
-- For verbs, include all Stammformen (infinitiv, präsens, präteritum, perfekt)
-- For adjectives, include all Steigerungsformen (positiv, komparativ, superlativ)
-- Use null for fields that don't apply to this part of speech
-- DO NOT include any text outside the JSON
-- DO NOT use markdown code blocks
-- ONLY output the JSON object`;
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          messages: [
-            {
-              role: "user",
-              content: promptContent
-            }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed with status ${response.status}`);
+      if (!englishParsed.hasTranslation) {
+        throw new Error('No translation was found on PONS for this word.');
       }
 
-      const data = await response.json();
-      let responseText = data.content[0].text;
-      
-      // Clean up the response
-      responseText = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      
-      const wordData = JSON.parse(responseText);
-      
-      // If article was provided, use it
-      if (providedArticle && wordData.nounData) {
-        wordData.nounData.gender = providedArticle;
+      let targetParsed = englishParsed;
+      let usedDictionary = englishDictionary;
+
+      if (selectedDictionary.code !== englishDictionary.code) {
+        try {
+          const targetData = await fetchPonsData(cleanWord, selectedDictionary.code);
+          const parsed = parsePonsResponse(targetData, englishParsed.german);
+          if (parsed.hasTranslation) {
+            targetParsed = parsed;
+            usedDictionary = selectedDictionary;
+          }
+        } catch (fetchError) {
+          console.warn('Unable to retrieve translation in selected language from PONS:', fetchError);
+        }
       }
-      
-      // Add SRS metadata
-      const category = categorizeWord(wordData.german, wordData.english, wordData.partOfSpeech);
-      
+
+      const languageName = getLanguageName(selectedLanguage);
+      const translationNote = selectedLanguage !== 'none' && usedDictionary.code === englishDictionary.code
+        ? `Translation unavailable for ${languageName} on PONS. Showing English meaning instead.`
+        : null;
+
+      const category = categorizeWord(
+        englishParsed.german,
+        englishParsed.translation || targetParsed.translation,
+        englishParsed.partOfSpeech || targetParsed.partOfSpeech
+      );
+
       const enhancedWord = {
-        ...wordData,
+        german: englishParsed.german,
+        english: englishParsed.translation || targetParsed.translation,
+        translation: selectedLanguage === 'none' ? null : (targetParsed.translation || englishParsed.translation),
+        pronunciation: englishParsed.pronunciation,
+        partOfSpeech: englishParsed.partOfSpeech || targetParsed.partOfSpeech || '',
+        emoji: null,
+        nounData: null,
+        verbData: null,
+        adjectiveData: null,
+        example: englishParsed.example || targetParsed.example,
+        exampleEnglish: englishParsed.exampleTranslation || englishParsed.example,
+        exampleTranslation: selectedLanguage === 'none' ? null : (targetParsed.exampleTranslation || targetParsed.translation || englishParsed.exampleTranslation || null),
+        ponsDictionary: usedDictionary.code,
+        ponsUrl: `https://en.pons.com/translate/german-${usedDictionary.slug}/${encodeURIComponent(cleanWord)}`,
         id: Date.now() + Math.random(),
         language: selectedLanguage,
-        category: category,
+        category,
         difficulty: 2,
         reviewCount: 0,
         correctCount: 0,
@@ -390,22 +722,58 @@ IMPORTANT:
         needsReview: false,
         createdAt: new Date().toISOString()
       };
-      
+
+      if (providedArticle) {
+        enhancedWord.nounData = {
+          gender: providedArticle,
+          plural: null,
+          declension: null
+        };
+      }
+
+      if (translationNote) {
+        enhancedWord.translationNote = translationNote;
+      }
+
+      if (!enhancedWord.translation && selectedLanguage !== 'none') {
+        enhancedWord.translation = englishParsed.translation;
+        enhancedWord.exampleTranslation = englishParsed.exampleTranslation || englishParsed.translation;
+        enhancedWord.translationNote = translationNote || `Translation unavailable for ${languageName} on PONS. Showing English meaning instead.`;
+      }
+
       return enhancedWord;
     } catch (error) {
-      console.error("Error adding word:", error);
-      
-      // Retry logic
-      if (retryCount < 2) {
-        console.log(`Retrying... (${retryCount + 1}/2)`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      console.error('Error adding word:', error);
+
+      if (retryCount < 1) {
+        await new Promise(resolve => setTimeout(resolve, 800));
         return addWord(germanWord, retryCount + 1);
       }
-      
-      setError(`Failed to add word "${germanWord}": ${error.message}`);
+
+      const errorMessage = error?.message || 'Unknown error';
+      const languageName = getLanguageName(selectedLanguage);
+      const manualNote = selectedLanguage === 'none'
+        ? `Manual entry added because automatic lookup failed: ${errorMessage}`
+        : `Manual entry added because automatic ${languageName} lookup failed: ${errorMessage}`;
+
+      const needsHint = /pons|network|cors|fetch/i.test(errorMessage);
+      const hint = needsHint
+        ? ' We tried alternate routes to PONS but they were blocked. Please check your connection or browser restrictions (like CORS or network blockers) and try again.'
+        : '';
+
+      setError(`Failed to add word "${germanWord}": ${errorMessage}${hint} You can fill in the details manually.`);
+      handleOpenManualEntry({
+        german: cleanWord,
+        failure: errorMessage,
+        providedArticle,
+        language: selectedLanguage,
+        rawInput: germanWord.trim(),
+        note: manualNote
+      });
       return null;
     }
   };
+
 
   const handleAddSingleWord = async () => {
     setIsLoading(true);
@@ -712,23 +1080,47 @@ IMPORTANT:
   };
 
   const getFilteredWords = () => {
-    return words.filter(word => {
-      const matchesSearch = searchQuery === '' || 
+    const filtered = words.filter(word => {
+      const matchesSearch = searchQuery === '' ||
         word.german.toLowerCase().includes(searchQuery.toLowerCase()) ||
         word.english.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (word.translation && word.translation.toLowerCase().includes(searchQuery.toLowerCase()));
-      
+
       const matchesCategory = filterCategory === 'all' || word.category === filterCategory;
-      
-      const matchesDifficulty = filterDifficulty === 'all' || 
+
+      const matchesDifficulty = filterDifficulty === 'all' ||
         (filterDifficulty === 'hard' && word.difficulty <= 2) ||
         (filterDifficulty === 'medium' && word.difficulty === 3) ||
         (filterDifficulty === 'easy' && word.difficulty >= 4) ||
         (filterDifficulty === 'flagged' && word.needsReview) ||
         (filterDifficulty === 'due' && isDueForReview(word));
-      
+
       return matchesSearch && matchesCategory && matchesDifficulty;
     });
+
+    const sorted = [...filtered].sort((a, b) => {
+      switch (sortOption) {
+        case 'alphabetical':
+          return a.german.localeCompare(b.german, 'de', { sensitivity: 'base' });
+        case 'difficulty':
+          return (b.difficulty || 0) - (a.difficulty || 0);
+        case 'difficulty-desc':
+          return (a.difficulty || 0) - (b.difficulty || 0);
+        case 'nextReview': {
+          const aTime = a.nextReview ? new Date(a.nextReview).getTime() : Number.POSITIVE_INFINITY;
+          const bTime = b.nextReview ? new Date(b.nextReview).getTime() : Number.POSITIVE_INFINITY;
+          return aTime - bTime;
+        }
+        case 'recent':
+        default: {
+          const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return bCreated - aCreated;
+        }
+      }
+    });
+
+    return sorted;
   };
 
   const filteredWords = getFilteredWords();
@@ -933,22 +1325,28 @@ IMPORTANT:
           )}
         </div>
 
-        {/* API Key Warning */}
-        {!apiKey && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-yellow-800 font-semibold">API Key Required</p>
-              <p className="text-yellow-700 text-sm">Please configure your Anthropic API key to start adding words.</p>
+        {/* Translation Source Notice */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <Info className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm text-emerald-800">
+            <p className="font-semibold text-emerald-900">Dictionary & Manual Fallback</p>
+            <p>
+              Vocabulary is pulled directly from <a href="https://en.pons.com/" target="_blank" rel="noopener noreferrer" className="underline font-semibold">PONS.com</a>.
+              If PONS is blocked by your network, you can still add translations manually using the fallback form.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 items-center">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                <Check className="w-3 h-3" /> PONS Primary
+              </span>
+              <button
+                onClick={() => handleOpenManualEntry({ language: selectedLanguage })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold transition-colors bg-sky-100 text-sky-700 hover:bg-sky-200 border border-sky-200"
+              >
+                <BookOpen className="w-3 h-3" /> Manual Fallback
+              </button>
             </div>
-            <button
-              onClick={() => setShowApiKeyInput(true)}
-              className="px-3 py-1 bg-yellow-200 text-yellow-800 rounded hover:bg-yellow-300 text-sm font-semibold"
-            >
-              Add Key
-            </button>
           </div>
-        )}
+        </div>
 
         {/* Error Display */}
         {error && (
@@ -972,13 +1370,11 @@ IMPORTANT:
                 <h2 className="text-xl font-semibold text-gray-800">Add Words</h2>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => setShowApiKeyInput(true)}
-                    className={`px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm ${
-                      apiKey ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'
-                    }`}
+                    onClick={handleManualEntryFromInput}
+                    className="px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm bg-sky-100 text-sky-700 hover:bg-sky-200"
                   >
-                    <AlertCircle className="w-4 h-4" />
-                    API Key {apiKey ? '✓' : '✗'}
+                    <BookOpen className="w-4 h-4" />
+                    Manual Entry
                   </button>
                   <button
                     onClick={() => setShowAnkiHelp(true)}
@@ -1077,7 +1473,7 @@ IMPORTANT:
                 </div>
                 
                 {showFilters && (
-                  <div className="grid md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                  <div className="grid md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                       <select
@@ -1104,6 +1500,21 @@ IMPORTANT:
                         <option value="easy">Easy (Mastered)</option>
                         <option value="flagged">Flagged ({flaggedCount})</option>
                         <option value="due">Due ({dueCount})</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                      <select
+                        value={sortOption}
+                        onChange={(e) => setSortOption(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      >
+                        <option value="recent">Recently Added</option>
+                        <option value="alphabetical">Alphabetical (A-Z)</option>
+                        <option value="difficulty">Difficulty (Easy → Hard)</option>
+                        <option value="difficulty-desc">Difficulty (Hard → Easy)</option>
+                        <option value="nextReview">Next Review Date</option>
                       </select>
                     </div>
                   </div>
@@ -1207,6 +1618,12 @@ IMPORTANT:
                             <span className={`text-xs px-2 py-1 rounded ${getDifficultyColor(word.difficulty)}`}>
                               {getDifficultyLabel(word.difficulty)}
                             </span>
+                            {word.manualEntry && (
+                              <span className="text-xs px-2 py-1 bg-sky-100 text-sky-700 rounded flex items-center gap-1">
+                                <BookOpen className="w-3 h-3" />
+                                Manual
+                              </span>
+                            )}
                             {word.verbData?.caseGovernance && (
                               <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold">
                                 + {word.verbData.caseGovernance}
@@ -1247,7 +1664,13 @@ IMPORTANT:
                             </div>
                           )}
                         </div>
-                        
+
+                        {word.translationNote && (
+                          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                            {word.translationNote}
+                          </p>
+                        )}
+
                         {word.example && (
                           <div className="mt-3 pt-3 border-t border-gray-200">
                             <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Example</p>
@@ -1273,6 +1696,20 @@ IMPORTANT:
                                 </div>
                               )}
                             </div>
+                          </div>
+                        )}
+
+                        {word.ponsUrl && (
+                          <div className="mt-3">
+                            <a
+                              href={word.ponsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              View full entry on PONS
+                            </a>
                           </div>
                         )}
 
@@ -1424,6 +1861,12 @@ IMPORTANT:
                         <span className="text-xs px-3 py-1 bg-purple-100 text-purple-700 rounded">
                           {getCurrentWord().category}
                         </span>
+                        {getCurrentWord().manualEntry && (
+                          <span className="text-xs px-3 py-1 bg-sky-100 text-sky-700 rounded flex items-center gap-1">
+                            <BookOpen className="w-4 h-4" />
+                            Manual
+                          </span>
+                        )}
                         {getCurrentWord().verbData?.caseGovernance && (
                           <span className="text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded font-semibold">
                             + {getCurrentWord().verbData.caseGovernance}
@@ -1445,7 +1888,13 @@ IMPORTANT:
                           </div>
                         )}
                       </div>
-                      
+
+                      {getCurrentWord().translationNote && (
+                        <p className="mt-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-center md:text-left">
+                          {getCurrentWord().translationNote}
+                        </p>
+                      )}
+
                       {getCurrentWord().example && (
                         <div className="bg-white rounded-lg p-4 shadow mt-4 text-left">
                           <p className="text-sm text-gray-500 font-semibold mb-3">Example</p>
@@ -1460,7 +1909,29 @@ IMPORTANT:
                                 <p className="text-base text-gray-700">{getCurrentWord().exampleEnglish}</p>
                               </div>
                             )}
+                            {getCurrentWord().language !== 'none' && getCurrentWord().exampleTranslation && (
+                              <div className="bg-indigo-50 rounded p-2">
+                                <p className="text-xs text-gray-500 font-semibold mb-1">
+                                  {getLanguageFlag(getCurrentWord().language)} {getLanguageName(getCurrentWord().language)}
+                                </p>
+                                <p className="text-base text-gray-700">{getCurrentWord().exampleTranslation}</p>
+                              </div>
+                            )}
                           </div>
+                        </div>
+                      )}
+
+                      {getCurrentWord().ponsUrl && (
+                        <div className="mt-4 text-left">
+                          <a
+                            href={getCurrentWord().ponsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            View on PONS
+                          </a>
                         </div>
                       )}
 
@@ -1530,6 +2001,173 @@ IMPORTANT:
         )}
       </div>
 
+      {/* Manual Entry Modal */}
+      {showManualEntryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={handleCloseManualEntry}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Manual Word Entry</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Fill in the details below when automatic PONS lookups are unavailable.
+                </p>
+                {manualEntryContext?.failure && (
+                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Lookup error: {manualEntryContext.failure}
+                  </p>
+                )}
+              </div>
+              <button onClick={handleCloseManualEntry} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">German word *</label>
+                  <input
+                    type="text"
+                    value={manualEntryDraft.german}
+                    onChange={(e) => handleManualEntryChange('german', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="z. B. Hund"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Part of speech</label>
+                  <select
+                    value={manualEntryDraft.partOfSpeech}
+                    onChange={(e) => handleManualEntryChange('partOfSpeech', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">(Optional)</option>
+                    <option value="noun">Noun</option>
+                    <option value="verb">Verb</option>
+                    <option value="adjective">Adjective</option>
+                    <option value="adverb">Adverb</option>
+                    <option value="phrase">Phrase</option>
+                    <option value="vocabulary">Vocabulary</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">English meaning *</label>
+                  <input
+                    type="text"
+                    value={manualEntryDraft.english}
+                    onChange={(e) => handleManualEntryChange('english', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="e.g. dog"
+                  />
+                </div>
+                {manualEntryContext?.language !== 'none' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                      {manualEntryContext?.languageName || 'Translation'}
+                    </label>
+                    <input
+                      type="text"
+                      value={manualEntryDraft.translation}
+                      onChange={(e) => handleManualEntryChange('translation', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Optional translation"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Noun gender</label>
+                  <select
+                    value={manualEntryDraft.nounGender}
+                    onChange={(e) => handleManualEntryChange('nounGender', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">None</option>
+                    <option value="der">der</option>
+                    <option value="die">die</option>
+                    <option value="das">das</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Plural form</label>
+                  <input
+                    type="text"
+                    value={manualEntryDraft.nounPlural}
+                    onChange={(e) => handleManualEntryChange('nounPlural', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Optional plural"
+                  />
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Example sentence (German)</label>
+                  <textarea
+                    value={manualEntryDraft.example}
+                    onChange={(e) => handleManualEntryChange('example', e.target.value)}
+                    className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="z. B. Der Hund schläft."
+                  />
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Example meaning (English)</label>
+                    <textarea
+                      value={manualEntryDraft.exampleEnglish}
+                      onChange={(e) => handleManualEntryChange('exampleEnglish', e.target.value)}
+                      className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="The dog is sleeping."
+                    />
+                  </div>
+                  {manualEntryContext?.language !== 'none' && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Example translation</label>
+                      <textarea
+                        value={manualEntryDraft.exampleTranslation}
+                        onChange={(e) => handleManualEntryChange('exampleTranslation', e.target.value)}
+                        className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Optional translation"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={manualEntryDraft.notes}
+                  onChange={(e) => handleManualEntryChange('notes', e.target.value)}
+                  className="w-full h-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Add any reminders or usage notes"
+                />
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-gray-200 flex flex-wrap gap-2 justify-end">
+              <button
+                onClick={handleCloseManualEntry}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleManualEntrySave}
+                className="px-5 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm font-semibold"
+              >
+                Save Word
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Export Modal */}
       {showExportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1572,78 +2210,6 @@ IMPORTANT:
         </div>
       )}
 
-      {/* API Key Modal */}
-      {showApiKeyInput && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowApiKeyInput(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold text-gray-800">🔑 Configure API Key</h3>
-                <button onClick={() => setShowApiKeyInput(false)} className="text-gray-500 hover:text-gray-700">
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-sm text-yellow-800 mb-2">
-                  <strong>⚠️ Important:</strong> This app requires an Anthropic API key to function.
-                </p>
-                <ul className="text-xs text-yellow-700 space-y-1 ml-4 list-disc">
-                  <li>Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="underline font-semibold">console.anthropic.com</a></li>
-                  <li>Your key will be stored locally in your browser</li>
-                  <li>Never share your API key with others</li>
-                  <li>API usage will be charged to your Anthropic account</li>
-                </ul>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Anthropic API Key
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-ant-api03-..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>💡 Note:</strong> This is a client-side application. Your API key is stored locally in your browser and never sent to any server except Anthropic's API.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex gap-3">
-              <button
-                onClick={() => {
-                  if (apiKey && apiKey.trim()) {
-                    setShowApiKeyInput(false);
-                  } else {
-                    alert('Please enter a valid API key');
-                  }
-                }}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              >
-                Save API Key
-              </button>
-              <button
-                onClick={() => {
-                  setApiKey('');
-                  localStorage.removeItem('anthropicApiKey');
-                }}
-                className="px-6 py-3 bg-red-100 text-red-700 rounded-lg hover:bg-red-200"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Help Modal */}
       {showAnkiHelp && (
