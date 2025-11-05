@@ -1,0 +1,1557 @@
+import React, { useState, useEffect } from 'react';
+import { BookOpen, Plus, Trash2, Volume2, RotateCw, Check, X, Languages, Search, Download, Upload, Filter, Tag, AlertCircle, RefreshCw, Star, Copy, Image, Info, Table, ChevronDown, ChevronUp } from 'lucide-react';
+
+export default function LanguageLearningApp() {
+  const [words, setWords] = useState([]);
+  const [newWord, setNewWord] = useState('');
+  const [batchWords, setBatchWords] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [mode, setMode] = useState('list'); // 'list', 'learn', or 'batch'
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [stats, setStats] = useState({ correct: 0, total: 0 });
+  const [selectedLanguage, setSelectedLanguage] = useState('romanian');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
+  const [shuffledIndices, setShuffledIndices] = useState([]);
+  const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 });
+  const [error, setError] = useState(null);
+  const [ttsVoices, setTtsVoices] = useState([]);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportData, setExportData] = useState('');
+  const [showAnkiHelp, setShowAnkiHelp] = useState(false);
+  const [selectedWordForDetails, setSelectedWordForDetails] = useState(null);
+  const [expandedWords, setExpandedWords] = useState(new Set());
+
+  const availableLanguages = [
+    { code: 'none', name: 'None (English only)', flag: '🇬🇧' },
+    { code: 'romanian', name: 'Romanian', flag: '🇷🇴' },
+    { code: 'spanish', name: 'Spanish', flag: '🇪🇸' },
+    { code: 'french', name: 'French', flag: '🇫🇷' },
+    { code: 'italian', name: 'Italian', flag: '🇮🇹' },
+    { code: 'portuguese', name: 'Portuguese', flag: '🇵🇹' },
+    { code: 'russian', name: 'Russian', flag: '🇷🇺' },
+    { code: 'polish', name: 'Polish', flag: '🇵🇱' },
+    { code: 'dutch', name: 'Dutch', flag: '🇳🇱' },
+    { code: 'turkish', name: 'Turkish', flag: '🇹🇷' },
+    { code: 'swedish', name: 'Swedish', flag: '🇸🇪' },
+    { code: 'japanese', name: 'Japanese', flag: '🇯🇵' },
+    { code: 'chinese', name: 'Chinese', flag: '🇨🇳' },
+    { code: 'arabic', name: 'Arabic', flag: '🇸🇦' },
+    { code: 'hindi', name: 'Hindi', flag: '🇮🇳' }
+  ];
+
+  // Load TTS voices
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = speechSynthesis.getVoices();
+      setTtsVoices(voices);
+    };
+    
+    loadVoices();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
+  // Load words from memory on mount
+  useEffect(() => {
+    const savedWords = JSON.parse(sessionStorage.getItem('germanWords') || '[]');
+    if (savedWords.length > 0) {
+      setWords(savedWords);
+    }
+  }, []);
+
+  // Save words to memory whenever they change
+  useEffect(() => {
+    if (words.length > 0) {
+      sessionStorage.setItem('germanWords', JSON.stringify(words));
+    } else {
+      sessionStorage.removeItem('germanWords');
+    }
+  }, [words]);
+
+  // Spaced Repetition Algorithm
+  const calculateNextReview = (difficulty) => {
+    const now = new Date();
+    const intervals = {
+      1: 1,      // 1 day - hard
+      2: 3,      // 3 days - medium
+      3: 7,      // 7 days - easy
+      4: 14,     // 14 days - very easy
+    };
+    
+    const days = intervals[difficulty] || 1;
+    now.setDate(now.getDate() + days);
+    return now.toISOString();
+  };
+
+  const isDueForReview = (word) => {
+    if (!word.nextReview) return true;
+    return new Date(word.nextReview) <= new Date();
+  };
+
+  // Get words that are due for review
+  const getDueWords = () => {
+    return words.filter(w => isDueForReview(w));
+  };
+
+  // Auto-categorize words
+  const categorizeWord = (german, english, partOfSpeech) => {
+    const categories = {
+      'Food & Drink': ['essen', 'trinken', 'food', 'drink', 'restaurant', 'küche', 'brot', 'wasser', 'bier', 'wein', 'kaffee', 'tee', 'obst', 'gemüse', 'fleisch', 'käse'],
+      'Travel': ['reise', 'flughafen', 'hotel', 'zug', 'auto', 'bus', 'travel', 'airport', 'train', 'car', 'ticket', 'koffer', 'bahnhof'],
+      'Numbers & Time': ['eins', 'zwei', 'drei', 'uhr', 'tag', 'woche', 'monat', 'jahr', 'number', 'time', 'hour', 'day', 'week', 'month', 'year'],
+      'Family & People': ['mutter', 'vater', 'kind', 'familie', 'freund', 'mensch', 'family', 'mother', 'father', 'friend', 'people', 'person', 'bruder', 'schwester'],
+      'Work & Education': ['arbeit', 'schule', 'lehrer', 'student', 'büro', 'work', 'school', 'teacher', 'office', 'job', 'studieren', 'lernen'],
+      'Nature & Weather': ['wetter', 'regen', 'sonne', 'baum', 'blume', 'weather', 'rain', 'sun', 'tree', 'flower', 'natur', 'himmel'],
+      'Body & Health': ['körper', 'kopf', 'hand', 'arzt', 'gesund', 'krank', 'body', 'head', 'doctor', 'health', 'sick', 'auge', 'ohr'],
+      'Home & Living': ['haus', 'wohnung', 'zimmer', 'tür', 'fenster', 'möbel', 'home', 'house', 'room', 'door', 'window', 'furniture', 'küche', 'bad'],
+      'Emotions & Feelings': ['liebe', 'glück', 'traurig', 'angst', 'freude', 'love', 'happy', 'sad', 'fear', 'joy', 'emotion', 'feeling'],
+      'Common Verbs': ['sein', 'haben', 'machen', 'gehen', 'kommen', 'sehen', 'wissen', 'denken', 'sagen', 'werden', 'können', 'müssen'],
+      'Common Adjectives': ['gut', 'schlecht', 'groß', 'klein', 'neu', 'alt', 'schön', 'hässlich', 'schnell', 'langsam'],
+    };
+
+    const searchText = `${german} ${english}`.toLowerCase();
+    
+    for (const [category, keywords] of Object.entries(categories)) {
+      if (keywords.some(keyword => searchText.includes(keyword))) {
+        return category;
+      }
+    }
+    
+    // Fallback based on part of speech
+    if (partOfSpeech === 'verb') return 'Common Verbs';
+    if (partOfSpeech === 'adjective') return 'Common Adjectives';
+    
+    return 'General';
+  };
+
+  // Extract article if present in the word
+  const extractArticleFromWord = (word) => {
+    const articlePattern = /^(der|die|das)\s+(.+)$/i;
+    const match = word.trim().match(articlePattern);
+    
+    if (match) {
+      return {
+        article: match[1].toLowerCase(),
+        word: match[2]
+      };
+    }
+    
+    return {
+      article: null,
+      word: word.trim()
+    };
+  };
+
+  const addWord = async (germanWord, retryCount = 0) => {
+    if (!germanWord.trim()) return null;
+    
+    setError(null);
+    try {
+      // Extract article if present
+      const { article: providedArticle, word: cleanWord } = extractArticleFromWord(germanWord);
+      
+      const languageName = availableLanguages.find(lang => lang.code === selectedLanguage)?.name || 'Romanian';
+      const isEnglishOnly = selectedLanguage === 'none';
+      
+      const articleHint = providedArticle ? `The user provided the article "${providedArticle}" for this word, so use that as the gender.` : '';
+      
+      const promptContent = isEnglishOnly 
+        ? `Provide comprehensive translation and learning information for the German word: "${cleanWord.trim()}"
+${articleHint}
+
+Please respond ONLY with a valid JSON object in this exact format (no additional text, no markdown code blocks):
+{
+  "german": "the German word (without article)",
+  "english": "English translation",
+  "pronunciation": "IPA pronunciation",
+  "partOfSpeech": "noun/verb/adjective/adverb",
+  "emoji": "a single relevant emoji that represents this word visually",
+  
+  "nounData": {
+    "gender": "der/die/das (only if noun, otherwise null)",
+    "plural": "plural form (only if noun, otherwise null)",
+    "declension": {
+      "singular": {
+        "nominativ": "der/die/das Word",
+        "genitiv": "des/der Word(e)s",
+        "dativ": "dem/der Word(e)",
+        "akkusativ": "den/die/das Word"
+      },
+      "plural": {
+        "nominativ": "die Words",
+        "genitiv": "der Words",
+        "dativ": "den Words",
+        "akkusativ": "die Words"
+      }
+    }
+  },
+  
+  "verbData": {
+    "infinitiv": "infinitive form (only if verb, otherwise null)",
+    "präsens": "ich/du/er forms, e.g., 'ich gehe, du gehst, er geht'",
+    "präteritum": "ich/du/er forms, e.g., 'ich ging, du gingst, er ging'",
+    "perfekt": "Partizip II, e.g., 'gegangen'",
+    "auxiliary": "haben or sein",
+    "caseGovernance": "Akkusativ/Dativ/Genitiv/mit + Dativ/etc. (or null if not applicable)"
+  },
+  
+  "adjectiveData": {
+    "positiv": "base form (only if adjective/adverb, otherwise null)",
+    "komparativ": "comparative form, e.g., 'schöner'",
+    "superlativ": "superlative form, e.g., 'am schönsten'"
+  },
+  
+  "example": "a simple example sentence in German",
+  "exampleEnglish": "English translation of the example sentence"
+}
+
+IMPORTANT: 
+- For nouns, provide COMPLETE declension table with all cases
+- For verbs, include all Stammformen (infinitiv, präsens, präteritum, perfekt)
+- For adjectives, include all Steigerungsformen (positiv, komparativ, superlativ)
+- Use null for fields that don't apply to this part of speech
+- DO NOT include any text outside the JSON
+- DO NOT use markdown code blocks
+- ONLY output the JSON object`
+        : `Provide comprehensive translation and learning information for the German word: "${cleanWord.trim()}"
+${articleHint}
+
+Please respond ONLY with a valid JSON object in this exact format (no additional text, no markdown code blocks):
+{
+  "german": "the German word (without article)",
+  "english": "English translation",
+  "translation": "${languageName} translation",
+  "pronunciation": "IPA pronunciation",
+  "partOfSpeech": "noun/verb/adjective/adverb",
+  "emoji": "a single relevant emoji that represents this word visually",
+  
+  "nounData": {
+    "gender": "der/die/das (only if noun, otherwise null)",
+    "plural": "plural form (only if noun, otherwise null)",
+    "declension": {
+      "singular": {
+        "nominativ": "der/die/das Word",
+        "genitiv": "des/der Word(e)s",
+        "dativ": "dem/der Word(e)",
+        "akkusativ": "den/die/das Word"
+      },
+      "plural": {
+        "nominativ": "die Words",
+        "genitiv": "der Words",
+        "dativ": "den Words",
+        "akkusativ": "die Words"
+      }
+    }
+  },
+  
+  "verbData": {
+    "infinitiv": "infinitive form (only if verb, otherwise null)",
+    "präsens": "ich/du/er forms, e.g., 'ich gehe, du gehst, er geht'",
+    "präteritum": "ich/du/er forms, e.g., 'ich ging, du gingst, er ging'",
+    "perfekt": "Partizip II, e.g., 'gegangen'",
+    "auxiliary": "haben or sein",
+    "caseGovernance": "Akkusativ/Dativ/Genitiv/mit + Dativ/etc. (or null if not applicable)"
+  },
+  
+  "adjectiveData": {
+    "positiv": "base form (only if adjective/adverb, otherwise null)",
+    "komparativ": "comparative form, e.g., 'schöner'",
+    "superlativ": "superlative form, e.g., 'am schönsten'"
+  },
+  
+  "example": "a simple example sentence in German",
+  "exampleEnglish": "English translation of the example sentence",
+  "exampleTranslation": "${languageName} translation of the example sentence"
+}
+
+IMPORTANT: 
+- For nouns, provide COMPLETE declension table with all cases
+- For verbs, include all Stammformen (infinitiv, präsens, präteritum, perfekt)
+- For adjectives, include all Steigerungsformen (positiv, komparativ, superlativ)
+- Use null for fields that don't apply to this part of speech
+- DO NOT include any text outside the JSON
+- DO NOT use markdown code blocks
+- ONLY output the JSON object`;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [
+            { 
+              role: "user", 
+              content: promptContent
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      let responseText = data.content[0].text;
+      
+      // Clean up the response
+      responseText = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      
+      const wordData = JSON.parse(responseText);
+      
+      // If article was provided, use it
+      if (providedArticle && wordData.nounData) {
+        wordData.nounData.gender = providedArticle;
+      }
+      
+      // Add SRS metadata
+      const category = categorizeWord(wordData.german, wordData.english, wordData.partOfSpeech);
+      
+      const enhancedWord = {
+        ...wordData,
+        id: Date.now() + Math.random(),
+        language: selectedLanguage,
+        category: category,
+        difficulty: 2,
+        reviewCount: 0,
+        correctCount: 0,
+        lastReviewed: null,
+        nextReview: null,
+        needsReview: false,
+        createdAt: new Date().toISOString()
+      };
+      
+      return enhancedWord;
+    } catch (error) {
+      console.error("Error adding word:", error);
+      
+      // Retry logic
+      if (retryCount < 2) {
+        console.log(`Retrying... (${retryCount + 1}/2)`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return addWord(germanWord, retryCount + 1);
+      }
+      
+      setError(`Failed to add word "${germanWord}": ${error.message}`);
+      return null;
+    }
+  };
+
+  const handleAddSingleWord = async () => {
+    setIsLoading(true);
+    const word = await addWord(newWord);
+    if (word) {
+      setWords([...words, word]);
+      setNewWord('');
+    }
+    setIsLoading(false);
+  };
+
+  const handleBatchImport = async () => {
+    const wordList = batchWords.split('\n').map(w => w.trim()).filter(w => w.length > 0);
+    
+    if (wordList.length === 0) {
+      alert('Please enter at least one word');
+      return;
+    }
+
+    if (wordList.length > 20) {
+      if (!window.confirm(`You're about to import ${wordList.length} words. This may take a few minutes. Continue?`)) {
+        return;
+      }
+    }
+
+    setIsLoading(true);
+    setLoadingProgress({ current: 0, total: wordList.length });
+    
+    const newWords = [];
+    for (let i = 0; i < wordList.length; i++) {
+      setLoadingProgress({ current: i + 1, total: wordList.length });
+      const word = await addWord(wordList[i]);
+      if (word) {
+        newWords.push(word);
+      }
+      // Small delay to avoid rate limiting
+      if (i < wordList.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    setWords([...words, ...newWords]);
+    setBatchWords('');
+    setMode('list');
+    setIsLoading(false);
+    setLoadingProgress({ current: 0, total: 0 });
+    
+    alert(`Successfully imported ${newWords.length} out of ${wordList.length} words!`);
+  };
+
+  const deleteWord = (id) => {
+    setWords(words.filter(w => w.id !== id));
+  };
+
+  const clearAllWords = () => {
+    if (window.confirm('Are you sure you want to delete all words? This cannot be undone.')) {
+      setWords([]);
+    }
+  };
+
+  const toggleNeedsReview = (id) => {
+    setWords(words.map(w => 
+      w.id === id ? { ...w, needsReview: !w.needsReview } : w
+    ));
+  };
+
+  const toggleWordExpansion = (id) => {
+    const newExpanded = new Set(expandedWords);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedWords(newExpanded);
+  };
+
+  const exportWords = () => {
+    const dataStr = JSON.stringify(words, null, 2);
+    setExportData(dataStr);
+    setShowExportModal(true);
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(exportData);
+      alert('Copied to clipboard! ✓');
+    } catch (err) {
+      const textArea = document.createElement('textarea');
+      textArea.value = exportData;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        alert('Copied to clipboard! ✓');
+      } catch (err) {
+        alert('Failed to copy. Please select and copy manually.');
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const downloadExport = () => {
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(exportData);
+    const link = document.createElement('a');
+    link.setAttribute('href', dataUri);
+    link.setAttribute('download', `german-words-${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const importWords = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const importedWords = JSON.parse(e.target.result);
+        if (Array.isArray(importedWords)) {
+          setWords([...words, ...importedWords]);
+          alert(`Successfully imported ${importedWords.length} words!`);
+        } else {
+          alert('Invalid file format');
+        }
+      } catch (error) {
+        alert('Error reading file: ' + error.message);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  const exportToAnki = () => {
+    if (words.length === 0) {
+      alert('No words to export!');
+      return;
+    }
+
+    let csvContent = '';
+    
+    words.forEach(word => {
+      const front = word.nounData?.gender ? `${word.nounData.gender} ${word.german}` : word.german;
+      const back = word.language === 'none' 
+        ? word.english 
+        : `${word.english}<br><br>${getLanguageName(word.language)}: ${word.translation}`;
+      
+      const tags = [word.category, word.partOfSpeech].filter(Boolean).join(' ');
+      
+      const example = word.example && word.exampleEnglish
+        ? `<b>DE:</b> ${word.example}<br><b>EN:</b> ${word.exampleEnglish}${
+            word.exampleTranslation ? `<br><b>${getLanguageName(word.language)}:</b> ${word.exampleTranslation}` : ''
+          }`
+        : '';
+      
+      const additionalInfo = [
+        word.pronunciation ? `Pronunciation: ${word.pronunciation}` : '',
+        word.nounData?.plural ? `Plural: ${word.nounData.plural}` : ''
+      ].filter(Boolean).join('<br>');
+      
+      const line = [front, back, tags, example, additionalInfo]
+        .map(field => `"${field.replace(/"/g, '""')}"`)
+        .join('\t');
+      
+      csvContent += line + '\n';
+    });
+
+    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', dataUri);
+    link.setAttribute('download', `anki-german-words-${new Date().toISOString().split('T')[0]}.txt`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    alert(`✅ Exported ${words.length} words to Anki format!`);
+  };
+
+  const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  const startLearning = (practiceMode = 'all') => {
+    let wordsToStudy = words;
+    
+    if (practiceMode === 'due') {
+      wordsToStudy = getDueWords();
+      if (wordsToStudy.length === 0) {
+        alert("No words are due for review! All caught up! 🎉");
+        return;
+      }
+    } else if (practiceMode === 'flagged') {
+      wordsToStudy = words.filter(w => w.needsReview);
+      if (wordsToStudy.length === 0) {
+        alert("No words flagged for review!");
+        return;
+      }
+    }
+    
+    if (wordsToStudy.length === 0) {
+      alert("Please add some words first!");
+      return;
+    }
+    
+    const indices = wordsToStudy.map((_, index) => index);
+    const shuffled = shuffleArray(indices);
+    setShuffledIndices(shuffled);
+    
+    setMode('learn');
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+    setStats({ correct: 0, total: 0 });
+  };
+
+  const getCurrentWord = () => {
+    if (mode === 'learn') {
+      let wordsToStudy = words;
+      const actualIndex = shuffledIndices[currentCardIndex];
+      return wordsToStudy[actualIndex];
+    }
+    return null;
+  };
+
+  const updateWordAfterReview = (difficulty) => {
+    const currentWord = getCurrentWord();
+    if (!currentWord) return;
+    
+    const updatedWords = words.map(w => {
+      if (w.id === currentWord.id) {
+        return {
+          ...w,
+          difficulty: difficulty,
+          reviewCount: w.reviewCount + 1,
+          correctCount: difficulty >= 3 ? w.correctCount + 1 : w.correctCount,
+          lastReviewed: new Date().toISOString(),
+          nextReview: calculateNextReview(difficulty),
+          needsReview: difficulty <= 2
+        };
+      }
+      return w;
+    });
+    
+    setWords(updatedWords);
+  };
+
+  const nextCard = () => {
+    if (currentCardIndex < shuffledIndices.length - 1) {
+      setCurrentCardIndex(currentCardIndex + 1);
+      setShowAnswer(false);
+    } else {
+      setMode('list');
+      const percentage = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+      alert(`Learning session complete! 🎉\n\nScore: ${stats.correct}/${stats.total} (${percentage}%)`);
+    }
+  };
+
+  const markDifficulty = (difficulty) => {
+    const isCorrect = difficulty >= 3;
+    setStats({ 
+      correct: isCorrect ? stats.correct + 1 : stats.correct, 
+      total: stats.total + 1 
+    });
+    updateWordAfterReview(difficulty);
+    nextCard();
+  };
+
+  const speak = (text) => {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'de-DE';
+      utterance.rate = 0.8;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      const germanVoices = ttsVoices.filter(voice => voice.lang.startsWith('de'));
+      const preferredVoice = germanVoices.find(voice => 
+        voice.name.includes('Enhanced') || 
+        voice.name.includes('Premium') ||
+        voice.name.includes('Google') ||
+        voice.name.includes('Microsoft')
+      ) || germanVoices[0];
+      
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+      }
+      
+      utterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+      };
+      
+      speechSynthesis.speak(utterance);
+    } else {
+      alert("Text-to-speech is not supported in your browser");
+    }
+  };
+
+  const getFilteredWords = () => {
+    return words.filter(word => {
+      const matchesSearch = searchQuery === '' || 
+        word.german.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        word.english.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (word.translation && word.translation.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      const matchesCategory = filterCategory === 'all' || word.category === filterCategory;
+      
+      const matchesDifficulty = filterDifficulty === 'all' || 
+        (filterDifficulty === 'hard' && word.difficulty <= 2) ||
+        (filterDifficulty === 'medium' && word.difficulty === 3) ||
+        (filterDifficulty === 'easy' && word.difficulty >= 4) ||
+        (filterDifficulty === 'flagged' && word.needsReview) ||
+        (filterDifficulty === 'due' && isDueForReview(word));
+      
+      return matchesSearch && matchesCategory && matchesDifficulty;
+    });
+  };
+
+  const filteredWords = getFilteredWords();
+  const categories = ['all', ...new Set(words.map(w => w.category))];
+  const dueCount = getDueWords().length;
+  const flaggedCount = words.filter(w => w.needsReview).length;
+
+  const getLanguageName = (languageCode) => {
+    const lang = availableLanguages.find(l => l.code === languageCode);
+    return lang ? lang.name : 'Romanian';
+  };
+
+  const getLanguageFlag = (languageCode) => {
+    const lang = availableLanguages.find(l => l.code === languageCode);
+    return lang ? lang.flag : '🇷🇴';
+  };
+
+  const getDifficultyColor = (difficulty) => {
+    if (difficulty <= 2) return 'text-red-600 bg-red-50';
+    if (difficulty === 3) return 'text-yellow-600 bg-yellow-50';
+    return 'text-green-600 bg-green-50';
+  };
+
+  const getDifficultyLabel = (difficulty) => {
+    if (difficulty === 1) return 'Very Hard';
+    if (difficulty === 2) return 'Hard';
+    if (difficulty === 3) return 'Medium';
+    return 'Easy';
+  };
+
+  const getOverallStats = () => {
+    if (words.length === 0) return { mastery: 0, avgDifficulty: 0 };
+    
+    const totalReviews = words.reduce((sum, w) => sum + w.reviewCount, 0);
+    const totalCorrect = words.reduce((sum, w) => sum + w.correctCount, 0);
+    const mastery = totalReviews > 0 ? Math.round((totalCorrect / totalReviews) * 100) : 0;
+    const avgDifficulty = words.reduce((sum, w) => sum + w.difficulty, 0) / words.length;
+    
+    return { mastery, avgDifficulty: avgDifficulty.toFixed(1), totalReviews };
+  };
+
+  const overallStats = getOverallStats();
+
+  // Declension Table Component
+  const DeclensionTable = ({ word }) => {
+    if (!word.nounData?.declension) return null;
+
+    return (
+      <div className="mt-4 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-indigo-200">
+        <div className="flex items-center gap-2 mb-3">
+          <Table className="w-5 h-5 text-indigo-600" />
+          <h4 className="font-bold text-indigo-900">Deklinationstabelle</h4>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-indigo-300">
+                <th className="text-left p-2 font-semibold text-indigo-900">Kasus</th>
+                <th className="text-left p-2 font-semibold text-indigo-900">Singular</th>
+                <th className="text-left p-2 font-semibold text-indigo-900">Plural</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-indigo-200">
+                <td className="p-2 font-medium text-indigo-700">Nominativ</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.singular.nominativ}</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.plural.nominativ}</td>
+              </tr>
+              <tr className="border-b border-indigo-200">
+                <td className="p-2 font-medium text-indigo-700">Genitiv</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.singular.genitiv}</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.plural.genitiv}</td>
+              </tr>
+              <tr className="border-b border-indigo-200">
+                <td className="p-2 font-medium text-indigo-700">Dativ</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.singular.dativ}</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.plural.dativ}</td>
+              </tr>
+              <tr>
+                <td className="p-2 font-medium text-indigo-700">Akkusativ</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.singular.akkusativ}</td>
+                <td className="p-2 text-gray-800">{word.nounData.declension.plural.akkusativ}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // Verb Conjugation Component
+  const VerbConjugation = ({ word }) => {
+    if (!word.verbData?.infinitiv) return null;
+
+    return (
+      <div className="mt-4 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
+        <div className="flex items-center gap-2 mb-3">
+          <BookOpen className="w-5 h-5 text-green-600" />
+          <h4 className="font-bold text-green-900">Stammformen</h4>
+        </div>
+        
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-green-700">Infinitiv:</span>
+            <span className="text-gray-800">{word.verbData.infinitiv}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-green-700">Präsens:</span>
+            <span className="text-gray-800">{word.verbData.präsens}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-green-700">Präteritum:</span>
+            <span className="text-gray-800">{word.verbData.präteritum}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-green-700">Perfekt:</span>
+            <span className="text-gray-800">{word.verbData.auxiliary} {word.verbData.perfekt}</span>
+          </div>
+          {word.verbData.caseGovernance && (
+            <div className="flex justify-between items-center p-2 bg-amber-50 rounded border border-amber-200">
+              <span className="font-medium text-amber-700">Rektion:</span>
+              <span className="text-gray-800 font-semibold">{word.verbData.caseGovernance}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Adjective Comparison Component
+  const AdjectiveComparison = ({ word }) => {
+    if (!word.adjectiveData?.positiv) return null;
+
+    return (
+      <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200">
+        <div className="flex items-center gap-2 mb-3">
+          <Star className="w-5 h-5 text-purple-600" />
+          <h4 className="font-bold text-purple-900">Steigerungsformen</h4>
+        </div>
+        
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-purple-700">Positiv:</span>
+            <span className="text-gray-800">{word.adjectiveData.positiv}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-purple-700">Komparativ:</span>
+            <span className="text-gray-800">{word.adjectiveData.komparativ}</span>
+          </div>
+          <div className="flex justify-between items-center p-2 bg-white rounded">
+            <span className="font-medium text-purple-700">Superlativ:</span>
+            <span className="text-gray-800">{word.adjectiveData.superlativ}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <BookOpen className="w-8 h-8 text-indigo-600" />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800">German Word Learner</h1>
+                <p className="text-gray-600">
+                  Advanced Grammar • {selectedLanguage === 'none' ? 'English' : `English & ${getLanguageName(selectedLanguage)}`}
+                </p>
+              </div>
+            </div>
+            <Languages className="w-12 h-12 text-indigo-400" />
+          </div>
+          
+          {/* Overall Statistics */}
+          {words.length > 0 && mode === 'list' && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-gray-200">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-indigo-600">{words.length}</p>
+                <p className="text-xs text-gray-600">Total Words</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-600">{overallStats.mastery}%</p>
+                <p className="text-xs text-gray-600">Mastery</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-blue-600">{overallStats.totalReviews}</p>
+                <p className="text-xs text-gray-600">Reviews</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-orange-600">{dueCount}</p>
+                <p className="text-xs text-gray-600">Due Today</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-red-600">{flaggedCount}</p>
+                <p className="text-xs text-gray-600">Flagged</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-red-800 font-semibold">Error</p>
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+            <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {mode === 'list' ? (
+          <>
+            {/* Input Section */}
+            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+              <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h2 className="text-xl font-semibold text-gray-800">Add Words</h2>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    onClick={() => setShowAnkiHelp(true)}
+                    className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 flex items-center gap-2 transition-colors text-sm"
+                  >
+                    <Info className="w-4 h-4" />
+                    Help
+                  </button>
+                  <button
+                    onClick={() => setMode('batch')}
+                    className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 flex items-center gap-2 transition-colors text-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Batch
+                  </button>
+                  <button
+                    onClick={exportWords}
+                    disabled={words.length === 0}
+                    className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors text-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export
+                  </button>
+                  <label className="px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-2 transition-colors cursor-pointer text-sm">
+                    <Upload className="w-4 h-4" />
+                    Import
+                    <input type="file" accept=".json" onChange={importWords} className="hidden" />
+                  </label>
+                </div>
+              </div>
+              
+              {/* Language Selector */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Translation Language
+                </label>
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  className="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  {availableLanguages.map(lang => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.flag} {lang.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 Tip: You can enter words with article (e.g., "der Hund") or without
+                </p>
+              </div>
+              
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={newWord}
+                  onChange={(e) => setNewWord(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddSingleWord()}
+                  placeholder="Enter German word (e.g., 'Haus' or 'der Hund')..."
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={handleAddSingleWord}
+                  disabled={isLoading || !newWord.trim()}
+                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                >
+                  {isLoading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                  {isLoading ? 'Adding...' : 'Add'}
+                </button>
+              </div>
+            </div>
+
+            {/* Search and Filter */}
+            {words.length > 0 && (
+              <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search words..."
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2 transition-colors"
+                  >
+                    <Filter className="w-5 h-5" />
+                    Filters
+                  </button>
+                </div>
+                
+                {showFilters && (
+                  <div className="grid md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                      <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      >
+                        {categories.map(cat => (
+                          <option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Difficulty</label>
+                      <select
+                        value={filterDifficulty}
+                        onChange={(e) => setFilterDifficulty(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      >
+                        <option value="all">All Difficulties</option>
+                        <option value="hard">Hard (Need Practice)</option>
+                        <option value="medium">Medium</option>
+                        <option value="easy">Easy (Mastered)</option>
+                        <option value="flagged">Flagged ({flaggedCount})</option>
+                        <option value="due">Due ({dueCount})</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Words List */}
+            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+              <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h2 className="text-xl font-semibold text-gray-800">
+                  Your Words ({filteredWords.length}{filteredWords.length !== words.length ? ` of ${words.length}` : ''})
+                </h2>
+                {words.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {dueCount > 0 && (
+                      <button
+                        onClick={() => startLearning('due')}
+                        className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 flex items-center gap-2 transition-colors text-sm"
+                      >
+                        <RotateCw className="w-4 h-4" />
+                        Due ({dueCount})
+                      </button>
+                    )}
+                    <button
+                      onClick={() => startLearning('all')}
+                      className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 transition-colors text-sm"
+                    >
+                      <RotateCw className="w-4 h-4" />
+                      Practice
+                    </button>
+                    <button
+                      onClick={clearAllWords}
+                      className="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-2 transition-colors text-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {filteredWords.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">
+                  {words.length === 0 ? 'No words yet. Add your first word above!' : 'No words match your filters.'}
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {filteredWords.map((word) => (
+                    <div key={word.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            {word.emoji && (
+                              <span className="text-3xl" title="Visual representation">
+                                {word.emoji}
+                              </span>
+                            )}
+                            <h3 className="text-2xl font-bold text-indigo-600">
+                              {word.nounData?.gender && <span className="text-gray-500 text-lg mr-1">{word.nounData.gender}</span>}
+                              {word.german}
+                              {word.nounData?.plural && <span className="text-gray-500 text-lg ml-2">• {word.nounData.plural}</span>}
+                            </h3>
+                            <button
+                              onClick={() => speak(word.german)}
+                              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                              title="Listen"
+                            >
+                              <Volume2 className="w-5 h-5 text-gray-600" />
+                            </button>
+                            <button
+                              onClick={() => toggleNeedsReview(word.id)}
+                              className={`p-2 hover:bg-gray-100 rounded-full transition-colors ${word.needsReview ? 'text-red-600' : 'text-gray-400'}`}
+                              title="Flag"
+                            >
+                              <Star className="w-5 h-5" fill={word.needsReview ? 'currentColor' : 'none'} />
+                            </button>
+                            {(word.nounData?.declension || word.verbData?.infinitiv || word.adjectiveData?.positiv) && (
+                              <button
+                                onClick={() => toggleWordExpansion(word.id)}
+                                className="p-2 hover:bg-indigo-100 rounded-full transition-colors text-indigo-600"
+                                title="Show grammar details"
+                              >
+                                {expandedWords.has(word.id) ? (
+                                  <ChevronUp className="w-5 h-5" />
+                                ) : (
+                                  <ChevronDown className="w-5 h-5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            <span className="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded">
+                              {word.partOfSpeech}
+                            </span>
+                            <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded flex items-center gap-1">
+                              <Tag className="w-3 h-3" />
+                              {word.category}
+                            </span>
+                            <span className={`text-xs px-2 py-1 rounded ${getDifficultyColor(word.difficulty)}`}>
+                              {getDifficultyLabel(word.difficulty)}
+                            </span>
+                            {word.verbData?.caseGovernance && (
+                              <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded font-semibold">
+                                + {word.verbData.caseGovernance}
+                              </span>
+                            )}
+                            {word.reviewCount > 0 && (
+                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                {word.reviewCount} reviews
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={() => deleteWord(word.id)}
+                          className="p-2 hover:bg-red-100 rounded-full transition-colors"
+                        >
+                          <Trash2 className="w-5 h-5 text-red-500" />
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600">
+                          <span className="font-semibold">Pronunciation:</span> {word.pronunciation}
+                        </p>
+                        
+                        <div className={`grid ${word.language === 'none' ? 'grid-cols-1' : 'md:grid-cols-2'} gap-4 mt-3 pt-3 border-t border-gray-200`}>
+                          <div>
+                            <p className="text-xs text-gray-500 uppercase font-semibold mb-1">🇬🇧 English</p>
+                            <p className="text-lg text-gray-800">{word.english}</p>
+                          </div>
+                          {word.language !== 'none' && word.translation && (
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase font-semibold mb-1">
+                                {getLanguageFlag(word.language)} {getLanguageName(word.language)}
+                              </p>
+                              <p className="text-lg text-gray-800">{word.translation}</p>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {word.example && (
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <p className="text-xs text-gray-500 uppercase font-semibold mb-2">Example</p>
+                            <div className="space-y-2">
+                              <div className="bg-gray-50 rounded-lg p-3">
+                                <p className="text-xs text-gray-500 font-semibold mb-1">🇩🇪 German</p>
+                                <p className="text-sm italic text-gray-700">{word.example}</p>
+                              </div>
+                              
+                              {word.exampleEnglish && (
+                                <div className="bg-blue-50 rounded-lg p-3">
+                                  <p className="text-xs text-gray-500 font-semibold mb-1">🇬🇧 English</p>
+                                  <p className="text-sm text-gray-700">{word.exampleEnglish}</p>
+                                </div>
+                              )}
+                              
+                              {word.language !== 'none' && word.exampleTranslation && (
+                                <div className="bg-indigo-50 rounded-lg p-3">
+                                  <p className="text-xs text-gray-500 font-semibold mb-1">
+                                    {getLanguageFlag(word.language)} {getLanguageName(word.language)}
+                                  </p>
+                                  <p className="text-sm text-gray-700">{word.exampleTranslation}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Grammar Details - Expandable */}
+                        {expandedWords.has(word.id) && (
+                          <div className="mt-4 space-y-3">
+                            {word.nounData?.declension && <DeclensionTable word={word} />}
+                            {word.verbData?.infinitiv && <VerbConjugation word={word} />}
+                            {word.adjectiveData?.positiv && <AdjectiveComparison word={word} />}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : mode === 'batch' ? (
+          /* Batch Import Mode */
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <button
+              onClick={() => setMode('list')}
+              className="text-gray-600 hover:text-gray-800 flex items-center gap-2 mb-6"
+            >
+              ← Back to List
+            </button>
+            
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Batch Import Words</h2>
+            <p className="text-gray-600 mb-6">
+              Enter one German word per line (with or without articles).
+            </p>
+            
+            <textarea
+              value={batchWords}
+              onChange={(e) => setBatchWords(e.target.value)}
+              placeholder="Beispiel&#10;das Haus&#10;lernen&#10;schön&#10;..."
+              className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              disabled={isLoading}
+            />
+            
+            {loadingProgress.total > 0 && (
+              <div className="mt-4">
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Processing...</span>
+                  <span>{loadingProgress.current} / {loadingProgress.total}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-indigo-600 h-2 rounded-full transition-all"
+                    style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex gap-4 mt-6">
+              <button
+                onClick={handleBatchImport}
+                disabled={isLoading || !batchWords.trim()}
+                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+              >
+                {isLoading ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-5 h-5" />
+                    Import Words
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setBatchWords('');
+                  setMode('list');
+                }}
+                disabled={isLoading}
+                className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Learning Mode - Flashcards */
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <button
+                  onClick={() => setMode('list')}
+                  className="text-gray-600 hover:text-gray-800 flex items-center gap-2"
+                >
+                  ← Back to List
+                </button>
+                <div className="text-right">
+                  <p className="text-sm text-gray-600">Progress: {currentCardIndex + 1} / {shuffledIndices.length}</p>
+                  <p className="text-sm text-gray-600">Score: {stats.correct} / {stats.total} ({stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0}%)</p>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-indigo-600 h-2 rounded-full transition-all"
+                  style={{ width: `${((currentCardIndex + 1) / shuffledIndices.length) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {getCurrentWord() && (
+              <div className="text-center">
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-12 mb-6 min-h-[400px] flex flex-col justify-center">
+                  {getCurrentWord().emoji && (
+                    <div className="text-6xl mb-4">{getCurrentWord().emoji}</div>
+                  )}
+                  
+                  <div className="flex justify-center items-center gap-3 mb-6">
+                    <h2 className="text-5xl font-bold text-indigo-700">
+                      {getCurrentWord().nounData?.gender && (
+                        <span className="text-gray-500 text-3xl mr-2">{getCurrentWord().nounData.gender}</span>
+                      )}
+                      {getCurrentWord().german}
+                    </h2>
+                    <button
+                      onClick={() => speak(getCurrentWord().german)}
+                      className="p-3 hover:bg-white rounded-full transition-colors"
+                    >
+                      <Volume2 className="w-6 h-6 text-indigo-600" />
+                    </button>
+                  </div>
+                  
+                  {getCurrentWord().nounData?.plural && (
+                    <p className="text-gray-500 text-xl mb-4">Plural: {getCurrentWord().nounData.plural}</p>
+                  )}
+                  
+                  {!showAnswer ? (
+                    <button
+                      onClick={() => setShowAnswer(true)}
+                      className="mx-auto px-8 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-lg"
+                    >
+                      Show Translation
+                    </button>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-600">{getCurrentWord().pronunciation}</p>
+                      
+                      <div className="flex justify-center gap-2 mb-4">
+                        <span className="text-xs px-3 py-1 bg-purple-100 text-purple-700 rounded">
+                          {getCurrentWord().category}
+                        </span>
+                        {getCurrentWord().verbData?.caseGovernance && (
+                          <span className="text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded font-semibold">
+                            + {getCurrentWord().verbData.caseGovernance}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className={`grid ${getCurrentWord().language === 'none' ? 'grid-cols-1' : 'md:grid-cols-2'} gap-6 mt-6`}>
+                        <div className="bg-white rounded-lg p-4 shadow">
+                          <p className="text-sm text-gray-500 font-semibold mb-2">🇬🇧 English</p>
+                          <p className="text-2xl text-gray-800">{getCurrentWord().english}</p>
+                        </div>
+                        {getCurrentWord().language !== 'none' && getCurrentWord().translation && (
+                          <div className="bg-white rounded-lg p-4 shadow">
+                            <p className="text-sm text-gray-500 font-semibold mb-2">
+                              {getLanguageFlag(getCurrentWord().language)} {getLanguageName(getCurrentWord().language)}
+                            </p>
+                            <p className="text-2xl text-gray-800">{getCurrentWord().translation}</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {getCurrentWord().example && (
+                        <div className="bg-white rounded-lg p-4 shadow mt-4 text-left">
+                          <p className="text-sm text-gray-500 font-semibold mb-3">Example</p>
+                          <div className="space-y-2">
+                            <div className="bg-gray-50 rounded p-2">
+                              <p className="text-xs text-gray-500 font-semibold mb-1">🇩🇪</p>
+                              <p className="text-base italic text-gray-700">{getCurrentWord().example}</p>
+                            </div>
+                            {getCurrentWord().exampleEnglish && (
+                              <div className="bg-blue-50 rounded p-2">
+                                <p className="text-xs text-gray-500 font-semibold mb-1">🇬🇧</p>
+                                <p className="text-base text-gray-700">{getCurrentWord().exampleEnglish}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Grammar in Learning Mode */}
+                      {getCurrentWord().verbData?.infinitiv && (
+                        <div className="bg-white rounded-lg p-4 shadow mt-4 text-left">
+                          <p className="text-sm text-gray-500 font-semibold mb-2">Verb Forms</p>
+                          <p className="text-xs text-gray-600">Präsens: {getCurrentWord().verbData.präsens}</p>
+                          <p className="text-xs text-gray-600">Perfekt: {getCurrentWord().verbData.auxiliary} {getCurrentWord().verbData.perfekt}</p>
+                        </div>
+                      )}
+
+                      {getCurrentWord().adjectiveData?.positiv && (
+                        <div className="bg-white rounded-lg p-4 shadow mt-4 text-left">
+                          <p className="text-sm text-gray-500 font-semibold mb-2">Comparison</p>
+                          <p className="text-xs text-gray-600">
+                            {getCurrentWord().adjectiveData.positiv} → {getCurrentWord().adjectiveData.komparativ} → {getCurrentWord().adjectiveData.superlativ}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {showAnswer && (
+                  <div className="space-y-4">
+                    <p className="text-gray-600 text-sm">How well did you know this word?</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <button
+                        onClick={() => markDifficulty(1)}
+                        className="px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                      >
+                        <X className="w-5 h-5 mx-auto mb-1" />
+                        <span className="text-sm">Very Hard</span>
+                        <span className="text-xs block mt-1 opacity-80">1 day</span>
+                      </button>
+                      <button
+                        onClick={() => markDifficulty(2)}
+                        className="px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+                      >
+                        <AlertCircle className="w-5 h-5 mx-auto mb-1" />
+                        <span className="text-sm">Hard</span>
+                        <span className="text-xs block mt-1 opacity-80">3 days</span>
+                      </button>
+                      <button
+                        onClick={() => markDifficulty(3)}
+                        className="px-4 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
+                      >
+                        <Check className="w-5 h-5 mx-auto mb-1" />
+                        <span className="text-sm">Good</span>
+                        <span className="text-xs block mt-1 opacity-80">7 days</span>
+                      </button>
+                      <button
+                        onClick={() => markDifficulty(4)}
+                        className="px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                      >
+                        <Star className="w-5 h-5 mx-auto mb-1" />
+                        <span className="text-sm">Easy</span>
+                        <span className="text-xs block mt-1 opacity-80">14 days</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold text-gray-800">Export Words</h3>
+                <button onClick={() => setShowExportModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-6">
+              <textarea
+                value={exportData}
+                readOnly
+                className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg font-mono text-xs bg-gray-50"
+                onClick={(e) => e.target.select()}
+              />
+            </div>
+            
+            <div className="p-6 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={copyToClipboard}
+                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
+              >
+                <Copy className="w-5 h-5" />
+                Copy
+              </button>
+              <button
+                onClick={downloadExport}
+                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal */}
+      {showAnkiHelp && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowAnkiHelp(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-gray-800">📚 Grammar Features</h3>
+              <button onClick={() => setShowAnkiHelp(false)} className="text-gray-500 hover:bg-gray-100 p-1 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto p-4 space-y-3 text-sm">
+              <div className="bg-blue-50 rounded-lg p-3">
+                <h4 className="font-bold text-blue-700 mb-2">📖 Nouns (Nomen)</h4>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  <li>• Full declension table (4 cases × 2 numbers)</li>
+                  <li>• Automatic article detection</li>
+                  <li>• Click ⬇️ button to show table</li>
+                  <li>• Can enter with or without article</li>
+                </ul>
+              </div>
+
+              <div className="bg-green-50 rounded-lg p-3">
+                <h4 className="font-bold text-green-700 mb-2">🔀 Verbs</h4>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  <li>• Stammformen (Infinitiv, Präsens, Präteritum, Perfekt)</li>
+                  <li>• Auxiliary verb (haben/sein)</li>
+                  <li>• Case governance (Akkusativ/Dativ/etc.)</li>
+                </ul>
+              </div>
+
+              <div className="bg-purple-50 rounded-lg p-3">
+                <h4 className="font-bold text-purple-700 mb-2">⭐ Adjectives</h4>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  <li>• Steigerungsformen</li>
+                  <li>• Positiv → Komparativ → Superlativ</li>
+                </ul>
+              </div>
+
+              <div className="bg-amber-50 rounded-lg p-3">
+                <h4 className="font-bold text-amber-700 mb-2">🎨 Visual Learning</h4>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  <li>• Each word has a relevant emoji</li>
+                  <li>• Helps with visual memory</li>
+                </ul>
+              </div>
+
+              <div className="bg-indigo-50 rounded-lg p-3">
+                <h4 className="font-bold text-indigo-700 mb-2">💡 Tips</h4>
+                <ul className="text-xs text-gray-700 space-y-1">
+                  <li>• Enter "der Hund" or just "Hund"</li>
+                  <li>• Click ⬇️ to expand grammar details</li>
+                  <li>• AI generates all forms automatically</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowAnkiHelp(false)}
+                className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"
+              >
+                Got it!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
